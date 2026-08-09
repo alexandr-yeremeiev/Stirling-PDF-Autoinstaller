@@ -1,32 +1,38 @@
 #!/bin/bash
+
+# Повністю автономний скрипт встановлення Stirling PDF для чистої Ubuntu.
+# Працює через стандартні репозиторії Ubuntu БЕЗ завантаження сторонніх бінарників.
+
 set -e
 
-# Блокуємо інтерактивні вікна Ubuntu
+# 1. Перевірка на права суперкористувача
+if [ "$EUID" -ne 0 ]; then
+  echo "Помилка: Цей скрипт потрібно запускати від імені root (через sudo bash)."
+  exit 1
+fi
+
 export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
 
-echo "=== 1. Встановлення Docker ==="
-sudo apt-get update -y
-sudo apt-get install -y docker.io curl wget
-sudo systemctl enable --now docker
+echo "=== 1. Оновлення джерел та встановлення Docker і Compose ==?"
+apt-get update -y
+# Встановлюємо чистий docker та офіційний плагін compose з репозиторіїв Ubuntu
+apt-get install -y docker.io docker-compose-v2 curl wget
 
-echo "=== 2. Налаштування Docker Compose Plugin ==="
-# Видаляємо всі попередні спроби та зламані HTML файли, якщо вони там були
-sudo rm -f /usr/lib/docker/cli-plugins/docker-compose
-sudo rm -f /usr/local/bin/docker-compose
+# Запуск та додавання Docker в автозапуск системи
+systemctl enable --now docker
 
-# Встановлюємо офіційний compose-plugin через apt-get (для Ubuntu noble 24.04 він вже доступний у базовому репозиторії)
-sudo apt-get install -y docker-compose-v2 || sudo apt-get install -y docker-compose-plugin || true
-
-echo "=== 3. Створення папок ==="
+echo "=== 2. Створення структури папок ==="
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
+
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
-echo "=== 4. Завантаження мови OCR ==="
+echo "=== 3. Завантаження мовного пакета для українського OCR ==="
 wget -q -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "https://github.com"
 
-echo "=== 5. Створення файлу docker-compose.yml ==="
+echo "=== 4. Генерація файлу docker-compose.yml ==="
 printf "%s\n" \
 "services:" \
 "  stirling-pdf:" \
@@ -48,10 +54,12 @@ printf "%s\n" \
 "      - SECURITY_CSRF_DISABLED=false" \
 "      - JAVA_TOOL_OPTIONS=-Xmx2g" > docker-compose.yml
 
-echo "=== 6. Запуск контейнера ==="
-sudo docker compose up -d
+echo "=== 5. Запуск Stirling PDF в Docker ==="
+# Використовуємо нативну команду, яку ми поставили через apt
+docker compose up -d
 
 echo "=========================================================="
-echo " УСПІШНО ВСТАНОВЛЕНО!"
-echo " Адреса платформи: http://$(curl -s ifconfig.me):8080"
+echo " ВСТАНОВЛЕННЯ УСПІШНО ЗАВЕРШЕНО!"
+echo " Папка з конфігураціями: $TARGET_DIR"
+echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
 echo "=========================================================="
