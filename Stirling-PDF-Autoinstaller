@@ -1,7 +1,6 @@
 #!/bin/bash
 # Сумісний зі стрімінгом (curl | bash) скрипт встановлення Stirling PDF для Ubuntu.
 
-# Зупиняти скрипт при будь-якій помилці
 set -e
 
 echo "=== 1. Зупинка та видалення старих контейнерів (якщо є) ==="
@@ -10,23 +9,21 @@ sudo docker rm stirling-pdf 2>/dev/null || true
 
 echo "=== 2. Оновлення пакетів та встановлення Docker Engine ==="
 sudo apt update
-# Встановлюємо базовий Docker. ТУТ НЕМАЄ docker-compose-plugin, тому apt не видасть помилку.
 sudo apt install -y docker.io curl wget
 
-# Запуск та додавання Docker в автозапуск
 sudo systemctl enable --now docker
 
-echo "=== 3. Пряме завантаження Docker Compose (Обхід проблем APT) ==="
+echo "=== 3. Пряме завантаження Docker Compose ==="
 sudo mkdir -p /usr/lib/docker/cli-plugins
 
-# Отримуємо версію та завантажуємо бінарник Compose прямо з релізів Docker на GitHub
-COMPOSE_VERSION=$(curl -s https://github.com | grep -Po '"tag_name": "\K[^"]*')
-echo "Завантаження Docker Compose версії $COMPOSE_VERSION..."
-sudo curl -SL "https://github.com{COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" -o /usr/lib/docker/cli-plugins/docker-compose
+# Оновлений залізобетонний метод: завантажуємо стабільний реліз безпосередньо через редірект GitHub, уникаючи парсингу API
+sudo curl -SL "https://github.com(uname -m)" -o /usr/lib/docker/cli-plugins/docker-compose
 sudo chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
+echo "Перевірка версії Docker Compose:"
+docker compose version
+
 echo "=== 4. Створення структури папок ==="
-# Визначаємо домашню папку реального користувача, навіть якщо запуск під sudo
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
 
@@ -38,7 +35,6 @@ UKR_DATA_URL="https://github.com"
 wget -q -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
 
 echo "=== 6. Генерація файлу docker-compose.yml ==="
-# printf гарантує коректне створення файлу при передачі скрипту через curl | bash
 printf '%s\n' \
 "services:" \
 "  stirling-pdf:" \
