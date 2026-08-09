@@ -1,22 +1,39 @@
 #!/bin/bash
 
-# Зупиняти скрипт при помилках
+# Повністю автономний скрипт встановлення Stirling PDF для чистої Ubuntu.
+# Сумісний із запуском через curl | sudo bash БЕЗ інтерактивних запитів.
+
+# Зупиняти скрипт при будь-якій помилці
 set -e
 
-echo "=== 1. Оновлення системи та встановлення Docker ==="
-sudo apt-get update
-sudo apt-get install -y docker.io curl wget
-sudo systemctl enable --now docker
+# 1. Перевірка на права суперкористувача (щоб уникнути зависання sudo всередині скрипту)
+if [ "$EUID" -ne 0 ]; then
+  echo "Помилка: Цей скрипт потрібно запускати від імені root (через sudo bash)."
+  exit 1
+fi
+
+# 2. Блокування будь-яких інтерактивних вікон Ubuntu (Needrestart, Grids тощо)
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
+echo "=== 1. Оновлення джерел та встановлення базового Docker ==="
+apt-get update -y
+apt-get install -y docker.io curl wget
+
+# Запуск та додавання Docker в автозапуск системи
+systemctl enable --now docker
 
 echo "=== 2. Пряме завантаження Docker Compose ==="
-sudo mkdir -p /usr/lib/docker/cli-plugins
+mkdir -p /usr/lib/docker/cli-plugins
 
-# Чисте пряме посилання без використання змінних uname, які ламають curl в пайпах
-sudo curl -SL "https://github.com" -o /usr/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/lib/docker/cli-plugins/docker-compose
+# Завантажуємо стабільний x86_64 реліз напряму, без uname
+curl -SL "https://github.com" -o /usr/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/lib/docker/cli-plugins/docker-compose
+# Робимо системний лінк, щоб працював і варіант з дефісом "docker-compose"
+ln -sf /usr/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 
 echo "=== 3. Створення структури папок ==="
-# Визначаємо домашню директорію реального користувача
+# Визначаємо домашню директорію реального користувача (не root) для збереження файлів
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
 
@@ -27,7 +44,7 @@ echo "=== 4. Завантаження мовного пакета для укр�
 wget -q -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "https://github.com"
 
 echo "=== 5. Генерація файлу docker-compose.yml ==="
-# Використовуємо екрановані лапки, які ідеально проходять через будь-який стрім curl | bash
+# Надійне форматування тексту через printf для стрімінгу
 printf "%s\n" \
 "services:" \
 "  stirling-pdf:" \
@@ -37,7 +54,7 @@ printf "%s\n" \
 "    ports:" \
 "      - \"8080:8080\"" \
 "    volumes:" \
-"      - ./stirling-data/tessdata:/usr/share/tessdata" \
+"      - ./stirling-data/tessdata:/usr/share/tessdata/tessdata" \
 "      - ./stirling-data/configs:/configs" \
 "      - ./stirling-data/logs:/logs" \
 "      - ./stirling-data/pipeline:/pipeline" \
@@ -49,10 +66,15 @@ printf "%s\n" \
 "      - SECURITY_CSRF_DISABLED=false" \
 "      - JAVA_TOOL_OPTIONS=-Xmx2g" > docker-compose.yml
 
-echo "=== 6. Запуск Stirling PDF ==="
-sudo docker compose up -d
+echo "=== 6. Запуск Stirling PDF в Docker ==="
+# Використовуємо прямий виклику бінарника через абсолютний шлях, що гарантує роботу -d на будь-якій системі
+/usr/local/bin/docker-compose up -d
 
 echo "=========================================================="
-echo " Встановлення успішно завершено!"
+echo " ВСТАНОВЛЕННЯ УСПІШНО ЗАВЕРШЕНО!"
+echo " Папка з конфігураціями: $TARGET_DIR"
 echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
+echo " "
+echo " Логін за замовчуванням: admin"
+echo " Пароль за замовчуванням: stirling"
 echo "=========================================================="
