@@ -1,28 +1,32 @@
 #!/bin/bash
 
 # Повністю автономний скрипт встановлення Stirling PDF для чистої Ubuntu.
-# Працює через стандартні репозиторії Ubuntu БЕЗ завантаження сторонніх бінарників.
+# Працює через офіційні пакети репозиторію БЕЗ завантаження сторонніх бінарників.
+# Захищений від конфліктів синтаксису docker compose за допомогою прямого виклику CLI-плагіна.
 
+# Зупиняти скрипт при будь-якій помилці
 set -e
 
-# 1. Перевірка на права суперкористувача
+# 1. Перевірка на права суперкористувача (щоб уникнути зависання sudo всередині пайпу)
 if [ "$EUID" -ne 0 ]; then
   echo "Помилка: Цей скрипт потрібно запускати від імені root (через sudo bash)."
   exit 1
 fi
 
+# Блокування інтерактивних вікон Ubuntu (Needrestart, фіолетові екрани оновлень дDirect)
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 
-echo "=== 1. Оновлення джерел та встановлення Docker і Compose ==?"
+echo "=== 1. Оновлення джерел та встановлення Docker і Compose ==="
 apt-get update -y
-# Встановлюємо чистий docker та офіційний плагін compose з репозиторіїв Ubuntu
+# Встановлюємо стабільну базу Docker та офіційний плагін Compose з репозиторіїв Ubuntu
 apt-get install -y docker.io docker-compose-v2 curl wget
 
-# Запуск та додавання Docker в автозапуск системи
+# Запуск та додавання служби Docker в автозапуск системи
 systemctl enable --now docker
 
-echo "=== 2. Створення структури папок ==="
+echo "=== 2. Створення структури папок для даних ==="
+# Визначаємо домашню директорію реального користувача (не root), який запустив скрипт
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
 
@@ -30,9 +34,11 @@ mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
 echo "=== 3. Завантаження мовного пакета для українського OCR ==="
+# Використовуємо wget, який стабільно викачує навчену модель розпізнавання тексту
 wget -q -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "https://github.com"
 
 echo "=== 4. Генерація файлу docker-compose.yml ==="
+# Надійне форматування тексту через printf для коректного стрімінгу через curl | bash
 printf "%s\n" \
 "services:" \
 "  stirling-pdf:" \
@@ -55,11 +61,14 @@ printf "%s\n" \
 "      - JAVA_TOOL_OPTIONS=-Xmx2g" > docker-compose.yml
 
 echo "=== 5. Запуск Stirling PDF в Docker ==="
-# Використовуємо нативну команду, яку ми поставили через apt
-docker compose up -d
+# Прямий виклику бінарника CLI-плагіна. Це на 100% обходить помилку "unknown shorthand flag: -d"
+/usr/libexec/docker/cli-plugins/docker-compose up -d
 
 echo "=========================================================="
 echo " ВСТАНОВЛЕННЯ УСПІШНО ЗАВЕРШЕНО!"
-echo " Папка з конфігураціями: $TARGET_DIR"
+echo " Папка з файлами створена тут: $TARGET_DIR"
 echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
+echo " "
+echo " Логін за замовчуванням: admin"
+echo " Пароль за замовчуванням: stirling"
 echo "=========================================================="
