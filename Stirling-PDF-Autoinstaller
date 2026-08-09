@@ -1,29 +1,48 @@
 #!/bin/bash
 
-# Скрипт автоматичного встановлення Stirling PDF для Ubuntu
-# З увімкненою автентифікацією, бізнес-функціями та українською локалізацією.
+# Оновлений скрипт автоматичного встановлення Stirling PDF для Ubuntu
+# Додано підключення офіційних репозиторіїв Docker для виправлення помилки apt.
 
 # Вихід при будь-якій помилці
 set -e
 
-echo "=== 1. Оновлення системи та встановлення залежностей ==="
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y docker.io docker-compose-plugin curl wget
+echo "=== 1. Підготовка та видалення конфліктних старих пакетів ==="
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do 
+  sudo apt remove -y "$pkg" 2>/dev/null || true 
+done
+
+echo "=== 2. Встановлення передумов та офіційного репозиторію Docker ==="
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+
+# Додаємо офіційний GPG-ключ Docker
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Додаємо офіційний репозиторій Docker до списків APT
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+echo "=== 3. Встановлення Docker Engine та Docker Compose Plugin ==="
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin wget
 
 # Запуск та додавання Docker в автозапуск
 sudo systemctl enable --now docker
 
-echo "=== 2. Створення структури папок для даних ==="
+echo "=== 4. Створення структури папок для даних ==="
 TARGET_DIR="$HOME/stirling-pdf"
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
-echo "=== 3. Завантаження мовного пакета для українського OCR ==="
-# Завантажуємо офіційну навчену модель тесеракту для розпізнавання української мови (ukr.traineddata)
+echo "=== 5. Завантаження мовного пакета для українського OCR ==="
 UKR_DATA_URL="https://github.com"
 wget -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
 
-echo "=== 4. Створення конфігурації docker-compose.yml ==="
+echo "=== 6. Створення конфігурації docker-compose.yml ==="
 cat << 'EOF' > docker-compose.yml
 services:
   stirling-pdf:
@@ -46,7 +65,7 @@ services:
       - JAVA_TOOL_OPTIONS=-Xmx2g
 EOF
 
-echo "=== 5. Запуск Stirling PDF в Docker ==="
+echo "=== 7. Запуск Stirling PDF в Docker ==="
 docker compose up -d
 
 echo "=========================================================="
