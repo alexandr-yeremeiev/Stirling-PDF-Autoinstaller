@@ -1,19 +1,25 @@
 #!/bin/bash
+
+# Зупиняти скрипт при помилках
 set -e
 
-echo "=== 1. Оновлення системи та встановлення Docker Engine ==="
-sudo apt update
-sudo apt install -y docker.io curl wget
+echo "=== 1. Оновлення системи та встановлення Docker ==="
+sudo apt-get update
+sudo apt-get install -y docker.io curl wget
 sudo systemctl enable --now docker
 
 echo "=== 2. Пряме завантаження Docker Compose ==="
 sudo mkdir -p /usr/lib/docker/cli-plugins
-sudo curl -SL "https://github.com(uname -m)" -o /usr/lib/docker/cli-plugins/docker-compose
+
+# Чисте пряме посилання без використання змінних uname, які ламають curl в пайпах
+sudo curl -SL "https://github.com" -o /usr/lib/docker/cli-plugins/docker-compose
 sudo chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
 echo "=== 3. Створення структури папок ==="
+# Визначаємо домашню директорію реального користувача
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
+
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
@@ -21,7 +27,8 @@ echo "=== 4. Завантаження мовного пакета для укр�
 wget -q -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "https://github.com"
 
 echo "=== 5. Генерація файлу docker-compose.yml ==="
-printf '%s\n' \
+# Використовуємо екрановані лапки, які ідеально проходять через будь-який стрім curl | bash
+printf "%s\n" \
 "services:" \
 "  stirling-pdf:" \
 "    image: stirlingtools/stirling-pdf:latest" \
@@ -47,5 +54,5 @@ sudo docker compose up -d
 
 echo "=========================================================="
 echo " Встановлення успішно завершено!"
-echo " Адреса платформи: http://$(curl -s ifconfig.me):8080"
+echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
 echo "=========================================================="
