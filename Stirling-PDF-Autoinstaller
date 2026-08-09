@@ -1,28 +1,35 @@
 #!/bin/bash
 
-# Повністю сумісний зі стрімінгом (curl | bash) скрипт встановлення Stirling PDF для Ubuntu.
+# Скрипт автоматичного встановлення Stirling PDF для Ubuntu (Сумісний із curl | sudo bash)
+# Повністю очищає старі контейнери та обходить помилки APT.
 
 # Зупиняти скрипт при помилках
 set -e
 
-echo "=== 1. Оновлення системи та встановлення базового Docker ==="
+echo "=== 1. Очищення старих контейнерів та конфліктів ==="
+# Якщо контейнер вже існує або працює — зупиняємо та видаляємо його
+sudo docker stop stirling-pdf 2>/dev/null || true
+sudo docker rm stirling-pdf 2>/dev/null || true
+
+echo "=== 2. Оновлення системи та встановлення базового Docker ==="
 sudo apt update
+# Встановлюємо чистий docker.io БЕЗ проблемного апт-плагіна compose
 sudo apt install -y docker.io curl wget
 
 # Запуск та додавання Docker в автозапуск
 sudo systemctl enable --now docker
 
-echo "=== 2. Пряме завантаження стабільного Docker Compose ==="
+echo "=== 3. Пряме завантаження стабільного Docker Compose з GitHub ==="
 sudo mkdir -p /usr/lib/docker/cli-plugins
 
-# Отримання останнього релізу Docker Compose
+# Завантажуємо актуальний бінарник Compose напряму з офіційних релізів Docker
 COMPOSE_VERSION=$(curl -s https://github.com | grep -Po '"tag_name": "\K[^"]*')
 
 echo "Завантажуємо Docker Compose версії $COMPOSE_VERSION..."
 sudo curl -SL "https://github.com{COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" -o /usr/lib/docker/cli-plugins/docker-compose
 sudo chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
-echo "=== 3. Створення структури папок для даних ==="
+echo "=== 4. Створення структури папок для даних ==="
 # Визначаємо домашню директорію реального користувача, навіть під sudo
 REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
 TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
@@ -30,11 +37,11 @@ TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
-echo "=== 4. Завантаження мовного пакета для українського OCR ==="
+echo "=== 5. Завантаження мовного пакета для українського OCR ==="
 UKR_DATA_URL="https://github.com"
 wget -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
 
-echo "=== 5. Генерація файлу docker-compose.yml ==="
+echo "=== 6. Генерація файлу docker-compose.yml ==="
 # Використовуємо надійний printf замість cat << EOF для сумісності з curl | bash
 printf '%s\n' \
 "services:" \
@@ -57,7 +64,7 @@ printf '%s\n' \
 "      - SECURITY_CSRF_DISABLED=false" \
 "      - JAVA_TOOL_OPTIONS=-Xmx2g" > docker-compose.yml
 
-echo "=== 6. Запуск Stirling PDF в Docker ==="
+echo "=== 7. Запуск Stirling PDF в Docker ==="
 sudo docker compose up -d
 
 echo "=========================================================="
