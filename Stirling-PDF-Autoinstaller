@@ -26,15 +26,15 @@ systemctl enable --now docker
 echo "=== 2. Пряме завантаження Docker Compose ==="
 mkdir -p /usr/lib/docker/cli-plugins
 
-# Очищаємо старі невдалі завантаження, якщо вони були
+# Очищаємо старі невдалі завантаження (HTML-файли помилок 404)
 rm -f /usr/lib/docker/cli-plugins/docker-compose
 rm -f /usr/local/bin/docker-compose
 
-# Завантажуємо стабільний x86_64 реліз за допомогою wget, який ідеально обробляє редіректи GitHub
+# Завантажуємо стабільний x86_64 реліз за допомогою wget (він гарантує завантаження програми, а не HTML сторінки)
 wget -q --show-progress -O /usr/lib/docker/cli-plugins/docker-compose "https://github.com"
 chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
-# Робимо системний лінк, щоб працював і варіант з дефісом "docker-compose"
+# Створюємо системний лінк для універсального виклику через дефіс
 ln -sf /usr/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
 
 echo "=== 3. Створення структури папок ==="
