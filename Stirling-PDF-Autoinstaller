@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Скрипт автоматичного встановлення Stirling PDF для Ubuntu
+# З увімкненою автентифікацією, бізнес-функціями та українською локалізацією.
+
+# Вихід при будь-якій помилці
+set -e
+
+echo "=== 1. Оновлення системи та встановлення залежностей ==="
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y docker.io docker-compose-plugin curl wget
+
+# Запуск та додавання Docker в автозапуск
+sudo systemctl enable --now docker
+
+echo "=== 2. Створення структури папок для даних ==="
+TARGET_DIR="$HOME/stirling-pdf"
+mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
+cd "$TARGET_DIR"
+
+echo "=== 3. Завантаження мовного пакета для українського OCR ==="
+# Завантажуємо офіційну навчену модель тесеракту для розпізнавання української мови (ukr.traineddata)
+UKR_DATA_URL="https://github.com"
+wget -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
+
+echo "=== 4. Створення конфігурації docker-compose.yml ==="
+cat << 'EOF' > docker-compose.yml
+services:
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./stirling-data/tessdata:/usr/share/tessdata
+      - ./stirling-data/configs:/configs
+      - ./stirling-data/logs:/logs
+      - ./stirling-data/pipeline:/pipeline
+    environment:
+      - SYSTEM_DEFAULTLOCALE=uk-UA
+      - LANGS=uk_UA,en_US
+      - SECURITY_ENABLELOGIN=true
+      - DISABLE_ADDITIONAL_FEATURES=false
+      - SECURITY_CSRF_DISABLED=false
+      - JAVA_TOOL_OPTIONS=-Xmx2g
+EOF
+
+echo "=== 5. Запуск Stirling PDF в Docker ==="
+docker compose up -d
+
+echo "=========================================================="
+echo " Встановлення успішно завершено!"
+echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
+echo " "
+echo " Стандартні дані для першого входу:"
+echo " Логін: admin"
+echo " Пароль: stirling"
+echo "=========================================================="
+echo "!!! Увага: Обов'язково змініть пароль в адмін-панелі !!!"
