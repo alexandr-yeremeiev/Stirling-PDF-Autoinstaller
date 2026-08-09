@@ -1,76 +1,68 @@
 #!/bin/bash
 
-# Скрипт автоматичного встановлення Stirling PDF для Ubuntu
-# Виправлено помилку з невидимим репозиторієм docker-compose-plugin
+# Повністю сумісний зі стрімінгом (curl | bash) скрипт встановлення Stirling PDF для Ubuntu.
 
+# Зупиняти скрипт при помилках
 set -e
 
-echo "=== 1. Видалення конфліктних старих пакетів ==="
-for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do 
-  sudo apt remove -y "$pkg" 2>/dev/null || true 
-done
-
-echo "=== 2. Встановлення базових утиліт та налаштування ключів ==="
+echo "=== 1. Оновлення системи та встановлення базового Docker ==="
 sudo apt update
-sudo apt install -y ca-certificates curl gnupg
-
-# Створюємо папку для ключів та завантажуємо офіційний ключ Docker
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://docker.com | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo "=== 3. Додавання стабільного репозиторію Docker ==="
-# Визначаємо версію Ubuntu (jammy, noble тощо)
-UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://docker.com ${UBUNTU_CODENAME} stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-echo "=== 4. Встановлення Docker Engine та Docker Compose Plugin ==="
-# Обов'язково робимо update, щоб система побачила новий репозиторій
-sudo apt update -y
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin wget
+sudo apt install -y docker.io curl wget
 
 # Запуск та додавання Docker в автозапуск
 sudo systemctl enable --now docker
 
-echo "=== 5. Створення структури папок для даних ==="
-TARGET_DIR="$HOME/stirling-pdf"
+echo "=== 2. Пряме завантаження стабільного Docker Compose ==="
+sudo mkdir -p /usr/lib/docker/cli-plugins
+
+# Отримання останнього релізу Docker Compose
+COMPOSE_VERSION=$(curl -s https://github.com | grep -Po '"tag_name": "\K[^"]*')
+
+echo "Завантажуємо Docker Compose версії $COMPOSE_VERSION..."
+sudo curl -SL "https://github.com{COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" -o /usr/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/lib/docker/cli-plugins/docker-compose
+
+echo "=== 3. Створення структури папок для даних ==="
+# Визначаємо домашню директорію реального користувача, навіть під sudo
+REAL_USER_HOME=$(eval echo "~${SUDO_USER:-$USER}")
+TARGET_DIR="$REAL_USER_HOME/stirling-pdf"
+
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
-echo "=== 6. Завантаження мовного пакета для українського OCR ==="
+echo "=== 4. Завантаження мовного пакета для українського OCR ==="
 UKR_DATA_URL="https://github.com"
 wget -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
 
-echo "=== 7. Створення конфігурації docker-compose.yml ==="
-cat << 'EOF' > docker-compose.yml
-services:
-  stirling-pdf:
-    image: stirlingtools/stirling-pdf:latest
-    container_name: stirling-pdf
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./stirling-data/tessdata:/usr/share/tessdata
-      - ./stirling-data/configs:/configs
-      - ./stirling-data/logs:/logs
-      - ./stirling-data/pipeline:/pipeline
-    environment:
-      - SYSTEM_DEFAULTLOCALE=uk-UA
-      - LANGS=uk_UA,en_US
-      - SECURITY_ENABLELOGIN=true
-      - DISABLE_ADDITIONAL_FEATURES=false
-      - SECURITY_CSRF_DISABLED=false
-      - JAVA_TOOL_OPTIONS=-Xmx2g
-EOF
+echo "=== 5. Генерація файлу docker-compose.yml ==="
+# Використовуємо надійний printf замість cat << EOF для сумісності з curl | bash
+printf '%s\n' \
+"services:" \
+"  stirling-pdf:" \
+"    image: stirlingtools/stirling-pdf:latest" \
+"    container_name: stirling-pdf" \
+"    restart: unless-stopped" \
+"    ports:" \
+"      - \"8080:8080\"" \
+"    volumes:" \
+"      - ./stirling-data/tessdata:/usr/share/tessdata" \
+"      - ./stirling-data/configs:/configs" \
+"      - ./stirling-data/logs:/logs" \
+"      - ./stirling-data/pipeline:/pipeline" \
+"    environment:" \
+"      - SYSTEM_DEFAULTLOCALE=uk-UA" \
+"      - LANGS=uk_UA,en_US" \
+"      - SECURITY_ENABLELOGIN=true" \
+"      - DISABLE_ADDITIONAL_FEATURES=false" \
+"      - SECURITY_CSRF_DISABLED=false" \
+"      - JAVA_TOOL_OPTIONS=-Xmx2g" > docker-compose.yml
 
-echo "=== 8. Запуск Stirling PDF в Docker ==="
-docker compose up -d
+echo "=== 6. Запуск Stirling PDF в Docker ==="
+sudo docker compose up -d
 
 echo "=========================================================="
 echo " Встановлення успішно завершено!"
+echo " Папка з файлами створена тут: $TARGET_DIR"
 echo " Stirling PDF доступний за адресою: http://$(curl -s ifconfig.me):8080"
 echo " "
 echo " Стандартні дані для першого входу:"
