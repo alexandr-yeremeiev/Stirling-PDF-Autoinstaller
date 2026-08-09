@@ -1,48 +1,49 @@
 #!/bin/bash
 
-# Оновлений скрипт автоматичного встановлення Stirling PDF для Ubuntu
-# Додано підключення офіційних репозиторіїв Docker для виправлення помилки apt.
+# Скрипт автоматичного встановлення Stirling PDF для Ubuntu
+# Виправлено помилку з невидимим репозиторієм docker-compose-plugin
 
-# Вихід при будь-якій помилці
 set -e
 
-echo "=== 1. Підготовка та видалення конфліктних старих пакетів ==="
+echo "=== 1. Видалення конфліктних старих пакетів ==="
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do 
   sudo apt remove -y "$pkg" 2>/dev/null || true 
 done
 
-echo "=== 2. Встановлення передумов та офіційного репозиторію Docker ==="
+echo "=== 2. Встановлення базових утиліт та налаштування ключів ==="
 sudo apt update
 sudo apt install -y ca-certificates curl gnupg
 
-# Додаємо офіційний GPG-ключ Docker
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+# Створюємо папку для ключів та завантажуємо офіційний ключ Docker
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://docker.com | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Додаємо офіційний репозиторій Docker до списків APT
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+echo "=== 3. Додавання стабільного репозиторію Docker ==="
+# Визначаємо версію Ubuntu (jammy, noble тощо)
+UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://docker.com ${UBUNTU_CODENAME} stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-echo "=== 3. Встановлення Docker Engine та Docker Compose Plugin ==="
-sudo apt update
+echo "=== 4. Встановлення Docker Engine та Docker Compose Plugin ==="
+# Обов'язково робимо update, щоб система побачила новий репозиторій
+sudo apt update -y
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin wget
 
 # Запуск та додавання Docker в автозапуск
 sudo systemctl enable --now docker
 
-echo "=== 4. Створення структури папок для даних ==="
+echo "=== 5. Створення структури папок для даних ==="
 TARGET_DIR="$HOME/stirling-pdf"
 mkdir -p "$TARGET_DIR"/stirling-data/{tessdata,configs,logs,pipeline}
 cd "$TARGET_DIR"
 
-echo "=== 5. Завантаження мовного пакета для українського OCR ==="
+echo "=== 6. Завантаження мовного пакета для українського OCR ==="
 UKR_DATA_URL="https://github.com"
 wget -O "$TARGET_DIR/stirling-data/tessdata/ukr.traineddata" "$UKR_DATA_URL"
 
-echo "=== 6. Створення конфігурації docker-compose.yml ==="
+echo "=== 7. Створення конфігурації docker-compose.yml ==="
 cat << 'EOF' > docker-compose.yml
 services:
   stirling-pdf:
@@ -65,7 +66,7 @@ services:
       - JAVA_TOOL_OPTIONS=-Xmx2g
 EOF
 
-echo "=== 7. Запуск Stirling PDF в Docker ==="
+echo "=== 8. Запуск Stirling PDF в Docker ==="
 docker compose up -d
 
 echo "=========================================================="
